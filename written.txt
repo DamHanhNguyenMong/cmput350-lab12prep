@@ -1,3 +1,9 @@
-a.
-b.
-c.
+a. We can insert point that increasingly close to the upper right corner (or SE if y is downward), like pi=(1-2^-i,1-2^-i),
+so they repeatedly fall into the same quadrant, which creates a long chain. So a qurey point in an empty corner, like (0,0)
+ can take O(1) but a query point along the clustered region may require traversing the chain, which takes O(n)
+b. Repeatedly inserting the same point causes the tree to keep subdividing the same quadrant even though the point cannot be 
+seperated -> uneccesary subdivisions. We can avoid this by imposing a max depth or allowing leaves to exceed their capacity
+when points are identical
+c. Translation may require moving obj between cells or rebuilding the tree, while rotation can change how obj fits into 
+axis-aligned subdivisions. Quadtrees are most suitable for static scenes or localized movement, but less suited for frequent
+large transformation.

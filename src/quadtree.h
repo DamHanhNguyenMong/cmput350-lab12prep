@@ -6,6 +6,10 @@
 #include <type_traits>
 #include <variant>
 #include <vector>
+#include <utility>
+#include <cassert>
+#include <concepts>
+#include <string>
 
 #include "aabb.h"
 #include "registry.h"
@@ -179,7 +183,50 @@ public:
     // Returns the number of intersection candidates found
     uint32_t queryIntersecting(const AABB<float>& queryBounds, std::vector<uint32_t>& candidates) {
         // TODO -- do not use recursion, but you may emulate it yourself.
-        return 0;
+        // 1. Remember original candidate count
+        const size_t originalSize = candidates.size();
+        if (!mBounds.intersects(queryBounds))
+            return 0;
+        // 2. Create a stack
+        struct StackEntry {
+            uint32_t nodeIdx; // current quadtree node
+            AABB<float> bounds; // spatial region represented by that node
+        };
+        std::vector<StackEntry> stack;
+        // 3. Push the root node and mBounds
+        stack.push_back({0, mBounds});
+
+        // 4. While stack is not empty:
+        while (!stack.empty()) {
+            // Pop a node
+            StackEntry current = stack.back();
+            stack.pop_back();
+            // Access the node using Registry's operator[]
+            auto& node = mNodes[current.nodeIdx];
+            // Check all primitives stored in this node
+            uint32_t primitiveIdx = node.primitivesIdx;
+            while (primitiveIdx != INVALID_IDX) {
+                if (mPrimitiveBounds[primitiveIdx].intersects(queryBounds)) { // if the qeury bound intersect with the primitive bound 
+                    candidates.push_back(primitiveIdx); // push to the conadidate list
+                }
+                primitiveIdx = mNextPrimitiveIdx[primitiveIdx]; // then check the next primitive in this node
+            }
+            // A leaf node has no children
+            if (node.isLeaf())
+                continue;
+            // Check the four children
+            for (uint32_t direction = NW; direction <= SE; direction++) {
+                uint32_t childIdx = node.childIdx + direction; // child index = parent index + direction enum
+                AABB<float> childBounds = current.bounds; // copy the entire region occupied by the current node
+                aabbEnter(childBounds, static_cast<OrdinalDirection>(direction)); // Change the bounds to the selected quadrant
+                // Only visit children that intersect the query
+                if (childBounds.intersects(queryBounds)) {
+                    stack.push_back({childIdx, childBounds}); // push the child to the stack
+                }
+            }
+        }
+        // 5. Return number of newly added candidates
+        return static_cast<uint32_t>(candidates.size() - originalSize);
     }
 
     // suitable for sparse updates
@@ -290,14 +337,52 @@ private:
     // Precondition: currentCell contains query.
     OrdinalDirection aabbQueryQuadrant(const AABB<float>& query,
                                        const AABB<float>& currentCell) const {
-        return {};
+        // middle point of the cell
+        auto middle = currentCell.middle();
+
+        bool west = query.maxPoint.x <= middle.x; // query is completely on the left side
+        bool east = query.minPoint.x >= middle.x; // query is completely on the right side
+        bool north = query.maxPoint.y <= middle.y; // query is completely above the center
+        bool south = query.minPoint.y >= middle.y; // query is completely below the center
+
+        if (west && north) return NW;
+        if (east && north) return NE;
+        if (west && south) return SW;
+        if (east && south) return SE;
+
+        return INVALID_DIRECTION;
     };
     // TODO
 
     // modifies a given AABB to obtain the resulting AABB if we were entering the cell on its
     // "direction" quadrant
     // Precondition: direction is not INVALID
-    void aabbEnter(AABB<float>& bounds, OrdinalDirection direction) const {};
+    void aabbEnter(AABB<float>& bounds, OrdinalDirection direction) const {
+        auto middle = bounds.middle();
+        switch (direction)
+        {
+            case NW:
+                bounds.maxPoint = middle; // keep the start, max is the middle 
+                break;
+
+            case NE:
+                bounds.minPoint.x = middle.x; // start at middle.x
+                bounds.maxPoint.y = middle.y; // max y us the middle.y
+                break;
+
+            case SW:
+                bounds.minPoint.y = middle.y; // start at middle.y
+                bounds.maxPoint.x = middle.x;  // max point x is middle.x
+                break;
+
+            case SE:
+                bounds.minPoint = middle; // top left is the middle
+                break;
+
+            default:
+                break;
+        }
+    };
     // TODO
 
     AABB<float> mBounds;
